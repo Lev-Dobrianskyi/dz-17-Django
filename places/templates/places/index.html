@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Explore notable places in Ivano-Frankivsk on an interactive map.">
+    <title>Explore Ivano-Frankivsk</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: Inter, "Segoe UI", Arial, sans-serif;
+            color: #17231f;
+            background: #f3f6f3;
+            font-synthesis: none;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-width: 320px; min-height: 100vh; }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 22px clamp(20px, 5vw, 64px);
+            background: #fff;
+            border-bottom: 1px solid #e4eae5;
+        }
+        .brand { display: flex; align-items: center; gap: 13px; }
+        .brand-mark {
+            display: grid; width: 42px; height: 42px; place-items: center;
+            border-radius: 13px; background: #e2f1e7; color: #287348; font-size: 22px;
+        }
+        h1 { margin: 0; font-size: clamp(20px, 3vw, 27px); letter-spacing: -0.04em; }
+        .subtitle { margin: 4px 0 0; color: #68766d; font-size: 14px; }
+
+        /* NEW: header actions */
+        .header-actions { display: flex; align-items: center; gap: 14px; }
+        .place-count { color: #536258; font-size: 13px; white-space: nowrap; }
+
+        .add-button {
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 10px;
+            background: #287348;
+            color: #fff;
+            font: inherit;
+            font-size: 14px;
+            font-weight: 650;
+            cursor: pointer;
+            transition: background .15s ease;
+        }
+        .add-button:hover { background: #1f5c39; }
+        .add-button:focus-visible { outline: 3px solid rgb(48 132 82 / 30%); outline-offset: 2px; }
+
+        main {
+            display: grid;
+            grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
+            gap: 20px;
+            height: calc(100vh - 87px);
+            min-height: 560px;
+            padding: 20px clamp(16px, 3vw, 40px);
+        }
+        .places-panel, .map-panel {
+            overflow: hidden;
+            border: 1px solid #e4eae5;
+            border-radius: 18px;
+            background: #fff;
+            box-shadow: 0 8px 26px rgb(34 58 42 / 5%);
+        }
+        .places-panel { display: flex; flex-direction: column; }
+        .panel-heading { padding: 22px 20px 14px; }
+        .panel-heading h2 { margin: 0; font-size: 17px; }
+        .panel-heading p { margin: 6px 0 0; color: #758078; font-size: 13px; }
+
+        .filters { display: grid; gap: 10px; padding: 0 16px; }
+        .filters input, .filters select {
+            width: 100%; min-height: 42px; padding: 0 12px;
+            border: 1px solid #dfe6e0; border-radius: 10px;
+            background: #fff; color: inherit; font: inherit; font-size: 14px;
+        }
+        .filters input:focus, .filters select:focus {
+            outline: 3px solid rgb(48 132 82 / 16%); border-color: #4a9b68;
+        }
+
+        .location-list {
+            display: flex; flex: 1; flex-direction: column; gap: 8px;
+            overflow-y: auto; padding: 0 10px 12px;
+        }
+        .location-card {
+            width: 100%; padding: 13px; border: 1px solid transparent;
+            border-radius: 12px; background: #fff; color: inherit;
+            cursor: pointer; text-align: left;
+            transition: background .15s ease, border-color .15s ease;
+        }
+        .location-card:hover, .location-card:focus-visible, .location-card.is-active {
+            border-color: #c9e2d0; background: #f2f8f3; outline: none;
+        }
+        .card-topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .location-name { font-size: 14px; font-weight: 650; }
+        .category {
+            flex-shrink: 0; padding: 4px 8px; border-radius: 999px;
+            background: #eaf3ec; color: #39744c; font-size: 10px; font-weight: 650;
+        }
+        .location-description { margin: 8px 0 0; color: #68766d; font-size: 12px; line-height: 1.5; }
+        .empty-state { padding: 20px 10px; color: #758078; font-size: 14px; text-align: center; }
+
+        .map-panel { position: relative; min-height: 300px; }
+        #map { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .map-note {
+            position: absolute; z-index: 500; right: 12px; bottom: 12px;
+            padding: 7px 10px; border-radius: 8px;
+            background: rgb(255 255 255 / 92%); color: #536258; font-size: 11px;
+            box-shadow: 0 1px 5px rgb(0 0 0 / 15%);
+        }
+
+        .popup-title { margin: 0 0 5px; font-size: 14px; font-weight: 700; }
+        .popup-category { margin: 0 0 6px; color: #39744c; font-size: 11px; font-weight: 650; }
+        .popup-description { margin: 0; color: #536258; font-size: 12px; line-height: 1.45; }
+
+        /* NEW: dialog for adding places */
+        .add-dialog {
+            width: min(480px, 92vw);
+            padding: 24px;
+            border: 0;
+            border-radius: 18px;
+            box-shadow: 0 20px 60px rgb(0 0 0 / 25%);
+        }
+        .add-dialog::backdrop {
+            background: rgb(15 30 20 / 45%);
+            backdrop-filter: blur(2px);
+        }
+        .add-dialog h2 { margin: 0 0 4px; font-size: 19px; letter-spacing: -0.02em; }
+        .add-dialog .hint { margin: 0 0 18px; color: #68766d; font-size: 13px; }
+
+        .field { display: grid; gap: 6px; margin-bottom: 14px; }
+        .field label { font-size: 12px; font-weight: 650; color: #445349; }
+        .field input, .field select, .field textarea {
+            width: 100%; min-height: 42px; padding: 9px 12px;
+            border: 1px solid #dfe6e0; border-radius: 10px;
+            background: #fff; color: inherit; font: inherit; font-size: 14px;
+            resize: vertical;
+        }
+        .field input:focus, .field select:focus, .field textarea:focus {
+            outline: 3px solid rgb(48 132 82 / 16%); border-color: #4a9b68;
+        }
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        .form-error { margin: 0 0 12px; color: #b03a2e; font-size: 13px; min-height: 18px; }
+
+        .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+        .dialog-actions button {
+            padding: 10px 16px; border-radius: 10px;
+            font: inherit; font-size: 14px; font-weight: 650; cursor: pointer;
+        }
+        .dialog-actions .primary { background: #287348; color: #fff; border: 0; }
+        .dialog-actions .primary:hover { background: #1f5c39; }
+        .dialog-actions .secondary { background: #fff; color: #445349; border: 1px solid #dfe6e0; }
+        .dialog-actions .secondary:hover { background: #f4f7f4; }
+
+        @media (max-width: 760px) {
+            .page-header { padding-top: 16px; padding-bottom: 16px; }
+            .place-count { display: none; }
+            main {
+                grid-template-columns: 1fr;
+                grid-template-rows: minmax(300px, 48vh) minmax(260px, 1fr);
+                height: auto; min-height: calc(100vh - 75px); padding: 12px;
+            }
+            .map-panel { grid-row: 1; }
+            .places-panel { grid-row: 2; }
+            .location-list { max-height: 36vh; }
+            .field-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header class="page-header">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">⌖</div>
+            <div>
+                <h1>Explore Ivano-Frankivsk</h1>
+                <p class="subtitle">Discover the city's landmarks, parks, and historic places.</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <div class="place-count" id="place-count" aria-live="polite"></div>
+            <!-- NEW -->
+            <button type="button" class="add-button" id="open-add-dialog">＋ Add place</button>
+        </div>
+    </header>
+
+    <main>
+        <aside class="places-panel" aria-label="Places">
+            <div class="panel-heading">
+                <h2>Places to explore</h2>
+                <p>Select a place to locate it on the map.</p>
+            </div>
+            <div class="filters">
+                <input id="search" type="search" placeholder="Search places..." aria-label="Search places">
+                <select id="category-filter" aria-label="Filter by category">
+                    <option value="">All categories</option>
+                </select>
+            </div>
+            <div class="location-list" id="location-list" aria-live="polite"></div>
+        </aside>
+        <section class="map-panel" aria-label="Interactive map of Ivano-Frankivsk">
+            <div id="map"></div>
+            <div class="map-note">Map data &copy; OpenStreetMap contributors</div>
+        </section>
+    </main>
+
+    <!-- NEW: add-place dialog -->
+    <dialog id="add-dialog" class="add-dialog">
+        <form method="post" id="add-form" action="{% url 'places:add_location' %}">
+            {% csrf_token %}
+            <h2>Add a new place</h2>
+            <p class="hint">Tip: click anywhere on the map to fill in the coordinates.</p>
+
+            <div class="field">
+                <label for="{{ form.name.id_for_label }}">Name</label>
+                {{ form.name }}
+            </div>
+            <div class="field">
+                <label for="{{ form.category.id_for_label }}">Category</label>
+                {{ form.category }}
+            </div>
+            <div class="field">
+                <label for="{{ form.description.id_for_label }}">Description</label>
+                {{ form.description }}
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="{{ form.lat.id_for_label }}">Latitude</label>
+                    {{ form.lat }}
+                </div>
+                <div class="field">
+                    <label for="{{ form.lng.id_for_label }}">Longitude</label>
+                    {{ form.lng }}
+                </div>
+            </div>
+
+            <p class="form-error" id="form-error"></p>
+
+            <div class="dialog-actions">
+                <button type="button" class="secondary" id="close-add-dialog">Cancel</button>
+                <button type="submit" class="primary">Add place</button>
+            </div>
+        </form>
+    </dialog>
+
+    {{ locations|json_script:"locations-data" }}
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const locations = JSON.parse(document.getElementById("locations-data").textContent);
+
+        const CITY_CENTER = [48.9226, 24.7111];
+
+        const map = L.map('map').setView(CITY_CENTER, 13);
+        const markerLayer = L.featureGroup().addTo(map);
+        const markers = new Map();
+        const list = document.getElementById("location-list");
+        const searchInput = document.getElementById("search");
+        const categoryFilter = document.getElementById("category-filter");
+        const countLabel = document.getElementById("place-count");
+
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+        window.addEventListener("load", () => map.invalidateSize());
+        window.addEventListener("resize", () => map.invalidateSize());
+
+        function popupContent(location) {
+            const content = document.createElement("div");
+            const name = document.createElement("p");
+            const category = document.createElement("p");
+            const description = document.createElement("p");
+            name.className = "popup-title";
+            category.className = "popup-category";
+            description.className = "popup-description";
+            name.textContent = location.name;
+            category.textContent = location.category;
+            description.textContent = location.description;
+            content.append(name, category, description);
+            return content;
+        }
+
+        function selectLocation(location) {
+            const marker = markers.get(location.id);
+            if (!marker) return;
+            map.setView(marker.getLatLng(), 16, { animate: true });
+            marker.openPopup();
+            list.querySelectorAll(".location-card").forEach((card) => {
+                const active = Number(card.dataset.locationId) === location.id;
+                card.classList.toggle("is-active", active);
+                if (active) card.focus({ preventScroll: true });
+            });
+        }
+
+        function renderLocations() {
+            const query = searchInput.value.trim().toLocaleLowerCase();
+            const selectedCategory = categoryFilter.value;
+            const filtered = locations.filter((location) => {
+                const matchesSearch = `${location.name} ${location.category} ${location.description}`
+                    .toLocaleLowerCase().includes(query);
+                return matchesSearch && (!selectedCategory || location.category === selectedCategory);
+            });
+
+            list.replaceChildren();
+            markerLayer.clearLayers();
+            markers.clear();
+            countLabel.textContent = `${filtered.length} of ${locations.length} places`;
+
+            if (!filtered.length) {
+                const empty = document.createElement("p");
+                empty.className = "empty-state";
+                empty.textContent = "No places match your search.";
+                list.append(empty);
+                return;
+            }
+
+            filtered.forEach((location) => {
+                const card = document.createElement("button");
+                const topLine = document.createElement("span");
+                const name = document.createElement("span");
+                const category = document.createElement("span");
+                const description = document.createElement("p");
+                card.type = "button";
+                card.className = "location-card";
+                card.dataset.locationId = location.id;
+                topLine.className = "card-topline";
+                name.className = "location-name";
+                category.className = "category";
+                description.className = "location-description";
+                name.textContent = location.name;
+                category.textContent = location.category;
+                description.textContent = location.description;
+                topLine.append(name, category);
+                card.append(topLine, description);
+                card.addEventListener("click", () => selectLocation(location));
+                list.append(card);
+
+                const marker = L.marker([location.lat, location.lng])
+                    .bindPopup(popupContent(location))
+                    .addTo(markerLayer);
+                marker.on("click", () => {
+                    list.querySelectorAll(".location-card").forEach((item) => {
+                        item.classList.toggle("is-active", Number(item.dataset.locationId) === location.id);
+                    });
+                });
+                markers.set(location.id, marker);
+            });
+
+            if (markerLayer.getLayers().length) {
+                map.fitBounds(markerLayer.getBounds(), { padding: [30, 30], maxZoom: 16 });
+            }
+        }
+
+        // NEW: rebuild the category <select> when new categories appear
+        function rebuildCategories() {
+            const current = categoryFilter.value;
+            categoryFilter.replaceChildren();
+            const all = document.createElement("option");
+            all.value = "";
+            all.textContent = "All categories";
+            categoryFilter.append(all);
+            [...new Set(locations.map((l) => l.category))].sort().forEach((category) => {
+                const option = document.createElement("option");
+                option.value = category;
+                option.textContent = category;
+                categoryFilter.append(option);
+            });
+            categoryFilter.value = current;
+        }
+
+        searchInput.addEventListener("input", renderLocations);
+        categoryFilter.addEventListener("change", renderLocations);
+
+        rebuildCategories();
+        renderLocations();
+
+        /* ---------- NEW: add-place dialog ---------- */
+        const dialog = document.getElementById("add-dialog");
+        const form = document.getElementById("add-form");
+        const errorEl = document.getElementById("form-error");
+        let pickMarker = null;
+
+        document.getElementById("open-add-dialog").addEventListener("click", () => {
+            errorEl.textContent = "";
+            dialog.showModal();
+        });
+
+        document.getElementById("close-add-dialog").addEventListener("click", () => {
+            dialog.close();
+        });
+
+        // Click map to fill coordinates while dialog is open
+        map.on("click", (e) => {
+            if (!dialog.open) return;
+            const { lat, lng } = e.latlng;
+            document.getElementById("id_lat").value = lat.toFixed(6);
+            document.getElementById("id_lng").value = lng.toFixed(6);
+            if (pickMarker) pickMarker.setLatLng([lat, lng]);
+            else pickMarker = L.marker([lat, lng], { opacity: 0.7 }).addTo(map);
+        });
+
+        dialog.addEventListener("close", () => {
+            if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; }
+        });
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            errorEl.textContent = "";
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch(form.action, {
+                    method: "POST",
+                    body: new FormData(form),
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.ok) {
+                    const messages = Object.entries(data.errors || {})
+                        .map(([field, msgs]) => `${field}: ${msgs.join(" ")}`)
+                        .join(" | ");
+                    errorEl.textContent = messages || "Could not save the place.";
+                    return;
+                }
+
+                // Append the new place and refresh the UI without a reload
+                locations.push(data.location);
+                rebuildCategories();
+                searchInput.value = "";
+                categoryFilter.value = "";
+                renderLocations();
+
+                // Focus the new marker
+                selectLocation(data.location);
+
+                form.reset();
+                dialog.close();
+            } catch (err) {
+                errorEl.textContent = "Network error — please try again.";
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
